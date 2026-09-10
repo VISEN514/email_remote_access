@@ -1,0 +1,10 @@
+All fonts in this directory are licensed under the SIL Open Font License,
+Version 1.1 (https://openfontlicense.org), sourced from the Google Fonts
+project (https://github.com/google/fonts):
+
+  - Black Ops One (blackopsone) -- used for the popup's header
+  - Chakra Petch (chakrapetch) -- used for the popup's subhead
+  - Titillium Web (titilliumweb) -- used for the popup's body text
+
+The OFL permits bundling, redistributing, and installing these files as
+part of this project.

@@ -1,0 +1,55 @@
+# Copy to config.yaml and fill in. config.yaml is gitignored.
+
+gmail:
+  credentials_path: "secrets/credentials.json"
+  token_path: "secrets/token.json"
+  poll_interval_seconds: 15
+  # Gmail's own receiving MTA authserv-id. Used to trust only the
+  # Authentication-Results / Received entries Gmail itself appended.
+  trusted_authserv_id: "mx.google.com"
+
+access:
+  phrase_path: "secrets/phrase.txt"
+  phrase_next_path: "secrets/phrase.next"
+  allowed_senders:
+    - "av.oct15@gmail.com"
+  max_failed_attempts: 5
+  lockout_minutes: 30
+  # Style used when the mail watcher itself generates a new phrase (remote
+  # rotate-confirmation, PLAN.md section 6). The popup can generate either
+  # style locally regardless of this setting.
+  default_phrase_style: "diceware"  # or "tactical"
+  # Security level (PLAN.md "Selectable security levels"): 2 = today's
+  # system (authenticated + allow-listed sender required); 1 = drops the
+  # allow-list check (authenticated sender only) -- a genuine, deliberate
+  # authentication-model downgrade, chosen via the popup, never via email.
+  default_security_level: 2
+  # Level 1 only: rolling 1-hour cap on distinct never-before-seen senders,
+  # since per-sender lockout/flood counters can't bound an attacker who
+  # controls how many "senders" exist. Allow-listed senders are exempt.
+  l1_max_new_senders_per_hour: 15
+  # Level 1 only: heartbeat reports a degraded state if level 1 has been
+  # continuously active longer than this (detection-only, not enforced).
+  l1_max_continuous_hours: 24
+
+session:
+  idle_timeout_minutes: 15
+  absolute_timeout_minutes: 60
+  local_web_port_range: [20000, 20100]
+  vnc_host: "127.0.0.1"
+  vnc_port: 5900
+  state_path: "state/session_state.json"
+
+flood:
+  threshold_per_cycle: 100
+  trash_instead_of_archive: false
+
+tunnel:
+  provider: "cloudflare"
+  cloudflared_path: "cloudflared.exe"
+
+notify:
+  alert_to: "av.oct15@gmail.com"
+
+heartbeat:
+  external_ping_url: ""  # optional, e.g. a healthchecks.io ping URL
