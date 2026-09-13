@@ -36,21 +36,46 @@ def _first_authserv_id_matches(value: str, trusted_authserv_id: str) -> bool:
     return m.group("authserv_id").lower() == trusted_authserv_id.lower()
 
 
-def _received_top_hop_is_trusted(received_value: str, trusted_authserv_id: str) -> bool:
-    # The topmost Received header's "by" clause names the receiving MTA.
+# Real Gmail delivery appends TWO Received headers, not one, by the time a
+# message lands in an inbox: an outer hop naming the receiving MTA (e.g.
+# "by mx.google.com with SMTPS ...", as the message is accepted from the
+# sending server) and then an INNERMOST, actually-newest internal-delivery
+# hop ("by <internal GFE address/hex id> with SMTP id ...", as Gmail's
+# frontend delivers it into the mailbox). Confirmed against real captured
+# headers during field testing: position 0 is always this internal hop
+# (an IPv6-looking or hex identifier, never a hostname), and the
+# "by mx.google.com"-style hop that this check actually cares about sits at
+# position 1. Checking ONLY position 0 (as an earlier version of this code
+# did) rejects every genuine Gmail-to-Gmail message -- a self-inflicted
+# false-negative, not a security feature.
+_TRUSTED_RECEIVED_HOP_SEARCH_DEPTH = 2
+
+
+def _received_top_hop_is_trusted(received_values: list[str], trusted_authserv_id: str) -> bool:
     # Deliberately parses the "by <host>" clause specifically, rather than a
     # substring search over the whole free-text line -- a naive substring
     # search is smugglable (an attacker-controlled HELO string or comment
     # elsewhere in the same Received line containing "google.com" would
     # otherwise pass even when the real receiving host isn't Google's MTA).
-    match = RECEIVED_BY_RE.search(received_value)
-    if not match:
-        return False
-    by_host = match.group(1).lower().rstrip(".")
+    #
+    # Bounded to the top _TRUSTED_RECEIVED_HOP_SEARCH_DEPTH entries, not the
+    # whole array: both of these hops are appended by Google's own MTA chain
+    # during real delivery, and nothing an external sender controls can ever
+    # get injected ABOVE them (Received headers are always prepended, newest
+    # on top) -- so this preserves the original fail-closed guarantee
+    # (scanning arbitrarily far down would defeat the point) while matching
+    # Gmail's actual observed behavior.
     google_hosts = ("google.com", "mx.google.com", "gmail.com")
-    return by_host == trusted_authserv_id.lower() or any(
-        by_host == h or by_host.endswith("." + h) for h in google_hosts
-    )
+    for received_value in received_values[:_TRUSTED_RECEIVED_HOP_SEARCH_DEPTH]:
+        match = RECEIVED_BY_RE.search(received_value)
+        if not match:
+            continue
+        by_host = match.group(1).lower().rstrip(".")
+        if by_host == trusted_authserv_id.lower() or any(
+            by_host == h or by_host.endswith("." + h) for h in google_hosts
+        ):
+            return True
+    return False
 
 
 def check_authenticated(headers: list[dict], trusted_authserv_id: str) -> AuthVerdict:
@@ -63,11 +88,14 @@ def check_authenticated(headers: list[dict], trusted_authserv_id: str) -> AuthVe
     if not received:
         return AuthVerdict(False, "no Received header present")
 
-    # Only the FIRST entry in each array is trusted -- this is the one Gmail's
-    # own receiving MTA is expected to have added as the newest (topmost) entry.
-    # We do not fall back to scanning the rest of the array: an attacker-forged
-    # header of the same name sits further down the stack, and scanning past
-    # position 0 would defeat the whole point of this check.
+    # Only the FIRST Authentication-Results entry is trusted -- this is the
+    # one Gmail's own receiving MTA is expected to have added as the newest
+    # (topmost) entry. We do not fall back to scanning the rest of the array:
+    # an attacker-forged header of the same name sits further down the
+    # stack, and scanning past position 0 would defeat the whole point of
+    # this check. (Received headers are handled differently -- see
+    # _received_top_hop_is_trusted's docstring for why that one legitimately
+    # needs to look at the top TWO entries, not just one.)
     if not _first_authserv_id_matches(auth_results[0], trusted_authserv_id):
         return AuthVerdict(
             False,
@@ -75,11 +103,11 @@ def check_authenticated(headers: list[dict], trusted_authserv_id: str) -> AuthVe
             f"{trusted_authserv_id!r} (fail closed, not scanning further entries)",
         )
 
-    if not _received_top_hop_is_trusted(received[0], trusted_authserv_id):
+    if not _received_top_hop_is_trusted(received, trusted_authserv_id):
         return AuthVerdict(
             False,
-            "Authentication-Results claimed a Gmail authserv-id but the topmost "
-            "Received hop doesn't corroborate it -- cross-check disagreement, fail closed",
+            "Authentication-Results claimed a Gmail authserv-id but neither of the "
+            "top Received hops corroborate it -- cross-check disagreement, fail closed",
         )
 
     verdicts = dict(VERDICT_RE.findall(auth_results[0].lower()))

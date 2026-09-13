@@ -108,6 +108,8 @@ phrase). Reply with the rest to get the session link.
 
 ### 11. Install as a service
 ```powershell
+mkdir service\bin
+# download nssm.cc/release, extract win64\nssm.exe into service\bin\nssm.exe
 .\service\install_service.ps1
 ```
 Then in `nssm edit EmailRemoteAccessWatcher`, set the service to log on as

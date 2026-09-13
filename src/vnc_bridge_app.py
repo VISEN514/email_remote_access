@@ -17,6 +17,7 @@ separately-running Windows service over loopback TCP -- it does not start or
 stop TightVNC itself (see PLAN.md: TightVNC is a persistent service, not
 started per-session).
 """
+import mimetypes
 import secrets
 import socket
 import threading
@@ -116,7 +117,18 @@ class VncBridgeApp:
                 self._nonce_consumed = True
                 self._real_token = secrets.token_urlsafe(32)
             self.touch()
-            resp = redirect("/vnc/vnc.html?path=ws&autoconnect=true&resize=scale")
+            # "path" tells noVNC's ui.js where to open the websocket, but it
+            # resolves that value as a RELATIVE URL against the current
+            # page (novnc/app/ui.js: `new URL(path, location.href)`) -- and
+            # since this page is served at /vnc/vnc.html, a bare "ws"
+            # resolves to /vnc/ws, not the /ws route this app actually
+            # registers. Confirmed via field testing: a raw script hitting
+            # /ws directly connects fine, while a real browser following
+            # noVNC's own relative-path logic gets "Failed to connect to
+            # server" because /vnc/ws doesn't exist. A leading "/" makes it
+            # resolve as an absolute path instead, landing on the correct
+            # route regardless of what page served it.
+            resp = redirect("/vnc/vnc.html?path=%2Fws&autoconnect=true&resize=scale")
             resp.set_cookie(
                 COOKIE_NAME,
                 self._real_token,
@@ -137,7 +149,17 @@ class VncBridgeApp:
                 abort(404)
             if not full_path.exists():
                 abort(404)
-            return Response(full_path.read_bytes())
+            # Flask's Response() defaults to text/html when no mimetype is
+            # given -- every asset (CSS, JS, PNG icons) was being served as
+            # text/html, which browsers correctly refuse to apply as a
+            # stylesheet or render as an image (confirmed via field
+            # testing: unstyled page, broken icons, "noVNC encountered an
+            # error" banner stuck visible because the CSS that would have
+            # hidden it never applied). guess_type falls back to
+            # application/octet-stream for anything unrecognized, which is
+            # still safe (browser won't misinterpret it as something else).
+            content_type, _ = mimetypes.guess_type(str(full_path))
+            return Response(full_path.read_bytes(), mimetype=content_type or "application/octet-stream")
 
         @app.route("/end-session", methods=["POST"])
         def end_session():

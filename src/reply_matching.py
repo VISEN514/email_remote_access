@@ -12,8 +12,19 @@ resolved open question), not claimed universal.
 import re
 import secrets
 
+# The "On ... wrote:" clause is DOTALL-matched (spans newlines) because
+# Gmail wraps this line onto two lines whenever the date/sender text is
+# long enough -- e.g. "On Sun, Sep 13, 2026 at 1:54 PM Operator Alpha
+# <address>\r\nwrote:\r\n" (confirmed via real field-testing capture, not
+# a hypothetical). A single-line-only regex (an earlier version of this
+# pattern) never finds the marker in that case, silently degrading to
+# "no marker found" -- which fed a real lockout-burning mismatch, since
+# the un-sliced attribution line then survives in every candidate. Kept
+# non-greedy ("wrote:" found at the FIRST opportunity after "on") and
+# anchored to a line starting with "on" (MULTILINE ^) so it doesn't
+# over-match into unrelated later text.
 _MARKER_RE = re.compile(
-    r"^\s*(on .+ wrote:\s*$|--\s*$|—\s*$)", re.IGNORECASE | re.MULTILINE
+    r"^\s*(on\b.*?wrote:[ \t]*$|--\s*$|—\s*$)", re.IGNORECASE | re.MULTILINE | re.DOTALL
 )
 
 
@@ -22,10 +33,17 @@ def _strip_quoted_lines(body: str) -> str:
 
 
 def _above_first_marker(body: str) -> str:
-    match = _MARKER_RE.search(body)
+    # Regex $ (MULTILINE) matches immediately before \n, not before \r\n --
+    # real mail bodies (this one included, per field-testing capture) use
+    # \r\n line endings, so a marker regex anchored with a bare $ silently
+    # fails to match a line ending in "...wrote:\r\n" even though it's
+    # visually the same as "...wrote:\n". Normalizing line endings first
+    # sidesteps this rather than patching every alternative in the regex.
+    normalized_body = body.replace("\r\n", "\n").replace("\r", "\n")
+    match = _MARKER_RE.search(normalized_body)
     if not match:
         return body
-    return body[: match.start()]
+    return normalized_body[: match.start()]
 
 
 def _normalize(text: str) -> str:

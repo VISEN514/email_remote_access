@@ -36,6 +36,24 @@ class TestReplyMatching(unittest.TestCase):
         body = "On Mon, Jan 1, 2026 at 9:00 AM Owner <owner@example.com> wrote:\n> tap me in\ncorrect horse battery staple"
         self.assertFalse(reply_matches_suffix(body, "correct horse battery staple"))
 
+    def test_on_wrote_marker_wrapped_across_two_lines(self):
+        # Regression test for a real field-testing bug: Gmail wraps the
+        # "On <date> <sender> wrote:" attribution line onto two lines
+        # whenever it's long enough -- "wrote:" ends up alone on its own
+        # line, not on the same line as "On ...". A single-line-only marker
+        # regex never finds it, leaving the attribution text in every
+        # candidate and burning a real lockout strike on a correctly-typed
+        # reply. Body trimmed from an actual captured message.
+        body = (
+            "Crayon graveyard oversleep tabby\r\n\r\n"
+            "On Sun, Sep 13, 2026 at 1:54 PM Operator Alpha <poietics.relay@gmail.com>\r\n"
+            "wrote:\r\n\r\n"
+            "> kilo uniform\r\n>\r\n"
+            "> Reply with the rest of today's phrase to continue. This request\r\n"
+            "> expires in 5 minutes.\r\n>\r\n"
+        )
+        self.assertTrue(reply_matches_suffix(body, "crayon graveyard oversleep tabby"))
+
     def test_mismatch_is_rejected(self):
         self.assertFalse(reply_matches_suffix("wrong words entirely here", "correct horse battery staple"))
 

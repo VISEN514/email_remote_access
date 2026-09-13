@@ -5,5 +5,7 @@ __pycache__/
 config.yaml
 secrets/
 state/*.json
+state/*.json.lock
 state/*.log
 novnc/
+service/bin/
